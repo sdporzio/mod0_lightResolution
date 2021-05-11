@@ -122,7 +122,7 @@ def GetEventStartTime(evid,h5):
 
 
 
-def ConvertTimeToZ(geometryHelper, io_group, io_channel, time):
+def ConvertTimeToZ(geometryHelper, io_group, io_channel, time, tref):
     '''
     Convert hit time to z coordinate
     '''
@@ -138,5 +138,5 @@ def ConvertTimeToZ(geometryHelper, io_group, io_channel, time):
     vdrift = geometryHelper['vdrift']
     clock_period = geometryHelper['clock_period']
     # Derive z coordinate
-    z_coordinate =  z_anode + time*vdrift*clock_period*drift_direction
+    z_coordinate =  z_anode + (time-tref)*vdrift*clock_period*drift_direction
     return z_coordinate

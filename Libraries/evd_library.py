@@ -5,13 +5,13 @@ import mpl_toolkits.mplot3d.art3d as art3d
 import Libraries.charge_library as cl
 import Libraries.light_library as ll
 
-def SmallEventDisplay(evid,cpath,cdata,geometryHelper,showHits=True,showTracks=True,trackOffset=10,rot=45):
+def SmallEventDisplay(evid,cpath,cdata,geometryHelper,showHits=True,showTracks=True,xTrackOffset=10,yTrackOffset=0,rot=45):
     ## GENERAL SETTINGS
     ticksize = 11
     labelsize = 12
 
     ## PREPARE AXES
-    fig = plt.figure(constrained_layout=False,figsize=(13.0,6.5))
+    fig = plt.figure(constrained_layout=False,figsize=(13.0,6.5),facecolor='white')
     gs_2d = fig.add_gridspec(nrows=1, ncols=2, width_ratios=[1,1],
                                         left=0.12, right=0.5, top=0.86, bottom=0.05,
                                         hspace=0, wspace=0.1)
@@ -69,7 +69,7 @@ def SmallEventDisplay(evid,cpath,cdata,geometryHelper,showHits=True,showTracks=T
     ## PREPARE ALL HITS AND TRACKS AND CONVERT TO CORRECT TIMING
     myHits = cdata['hits'][cdata['events'][evid]['hit_ref']]
     myTracks = cdata['tracks'][cdata['events'][evid]['track_ref']]
-    z_hits = [cl.ConvertTimeToZ(geometryHelper, io_group, io_channel, time) for io_group, io_channel, time in zip(myHits['iogroup'], myHits['iochannel'], myHits['ts']-tref)]
+    z_hits = [cl.ConvertTimeToZ(geometryHelper, io_group, io_channel, time, tref) for io_group, io_channel, time in zip(myHits['iogroup'], myHits['iochannel'], myHits['ts'])]
 
     ## PREPARE FOR PLOTS
     # cmap = plt.cm.get_cmap('jet')
@@ -81,8 +81,8 @@ def SmallEventDisplay(evid,cpath,cdata,geometryHelper,showHits=True,showTracks=T
         ax_xy.scatter(myHits['px'],myHits['py'],c=cmap(norm(myHits['q'])),s=1.5)
     if showTracks:
         for i,t in enumerate(myTracks):
-            ax_xy.plot( [t['start'][0],t['end'][0]],
-                        [t['start'][1]+trackOffset,t['end'][1]+trackOffset],
+            ax_xy.plot( [t['start'][0]+xTrackOffset,t['end'][0]+xTrackOffset],
+                        [t['start'][1]+yTrackOffset,t['end'][1]+yTrackOffset],
                         c=f'C{i+1}',
                         lw=2
             )
@@ -96,8 +96,8 @@ def SmallEventDisplay(evid,cpath,cdata,geometryHelper,showHits=True,showTracks=T
         ax_zy.scatter(z_hits,myHits['py'],c=cmap(norm(myHits['q'])),s=1.5)
     if showTracks:
         for i,t in enumerate(myTracks):
-            ax_zy.plot( [t['start'][2],t['end'][2]],
-                        [t['start'][1]+trackOffset,t['end'][1]+trackOffset],
+            ax_zy.plot( [t['start'][2]+xTrackOffset,t['end'][2]+xTrackOffset],
+                        [t['start'][1]+yTrackOffset,t['end'][1]+yTrackOffset],
                         c=f'C{i+1}',
                         lw=2
             )
@@ -111,8 +111,8 @@ def SmallEventDisplay(evid,cpath,cdata,geometryHelper,showHits=True,showTracks=T
     if showTracks:
         for i,t in enumerate(myTracks):
             ax_xyz.plot([t['start'][0],t['end'][0]],
-                        [t['start'][2],t['end'][2]],
-                        [t['start'][1]+trackOffset,t['end'][1]+trackOffset],
+                        [t['start'][2]+xTrackOffset,t['end'][2]+xTrackOffset],
+                        [t['start'][1]+yTrackOffset,t['end'][1]+yTrackOffset],
                         c=f'C{i+1}',
                         lw=2
             )
@@ -133,4 +133,5 @@ def SmallEventDisplay(evid,cpath,cdata,geometryHelper,showHits=True,showTracks=T
         fontsize=12
         )
 
-    plt.show()
+    # plt.show()
+    return fig, ax_xy, ax_zy, ax_xyz
