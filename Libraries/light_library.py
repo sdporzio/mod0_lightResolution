@@ -6,47 +6,54 @@ from pathlib import Path
 import Libraries.light_class as cem
 
 ### GET ALL WAVEFORM INFORMATION FROM WAVEFORM FILES
-def GetEventMetadata(df,lpath,event_n,datime,offset_us,window_us=1500):
+def GetEventMetadata(df,lpath,event_n,datime,offset_us,window_us=1500,verbose=True):
     # Open ROOT file
     rfile = ROOT.TFile.Open(lpath, 'read')
     rwf = rfile.Get('rwf')
     # Create event metadata object
     eventmeta = cem.EventMeta(event_n)
     # Assign datetime object and convert to epoch linux time
-    eventmeta.ntp_dt = datime
-    eventmeta.ntp_us = (dt.datetime.strptime(datime,"%Y-%m-%d %H:%M:%S") - dt.datetime(1970,1,1)).total_seconds()
+    if isinstance(datime,int):
+        eventmeta.ntp_dt = dt.datetime.utcfromtimestamp(datime).strftime('%Y-%m-%d %H:%M:%S')
+        eventmeta.ntp_us = datime
+    else:
+        eventmeta.ntp_dt = datime
+        eventmeta.ntp_us = (dt.datetime.strptime(datime,"%Y-%m-%d %H:%M:%S") - dt.datetime(1970,1,1)).total_seconds()
     eventmeta.dec_offset_us = offset_us
     # Save the serial numbers for the two ADCs
     sn1,sn2 = eventmeta.SN_ADC[1], eventmeta.SN_ADC[2]
 
     # Looking for busy signal in declared timing range
-    print(f"Searching Busy at {eventmeta.ntp_dt}, with {offset_us} us offset, in a {window_us} us-wide window.\n")
+    if(verbose):
+        print(f"Searching Busy at {eventmeta.ntp_dt}, with {offset_us} us offset, in a {window_us} us-wide window.\n")
     # Find all data with a second (1000 ms) of our datetime timestamp
     query_df = df.query(f'abs(utime_ms-{eventmeta.ntp_us*1000.:.0f})<1000')
     # Find all data within a 'window_us'-wide window of our timing offset from last PPS (tai_ns)
     query_df = query_df.query(f'abs(tai_ns/1e3-{eventmeta.dec_offset_us:.0f})<{window_us}')
     # Find all the SUM signals plus the Busy signal (ch=00) contained in our search window
-    query_df = query_df.query(f'ch==8 | ch==15 | ch==24 | ch==31 | ch==40 | ch==47 | ch==56 | ch==63 | ch==0')
+    # query_df = query_df.query(f'ch==8 | ch==15 | ch==24 | ch==31 | ch==40 | ch==47 | ch==56 | ch==63 | ch==0')
     # Find the busy signal for each ADC
     adc1_df = query_df.query(f"sn=={sn1}")
     adc2_df = query_df.query(f'sn=={sn2}')
+    eventmeta.nChannels_ADC = [len(adc1_df),len(adc2_df)]
 
     # Check how many recording channels each ADC has
-    if len(adc1_df)>0:
-        print(f"- Found following channels for ADC 1 (Mult. {len(adc1_df)})")
-        channel_list = [int(r['ch']) for i,r in adc1_df.iterrows()]
-        print('|_', channel_list)
-    else:
-        print("- Found no channels with entries for ADC1 (Mult. 0)")
-        print('|_ []')
+    if(verbose):
+        if len(adc1_df)>0:
+            print(f"- Found following channels for ADC 1 (Mult. {len(adc1_df)})")
+            channel_list = np.sort([int(r['ch']) for i,r in adc1_df.iterrows()])
+            print('|_', channel_list)
+        else:
+            print("- Found no channels with entries for ADC1 (Mult. 0)")
+            print('|_ []')
 
-    if len(adc2_df)>0:
-        print(f"- Found following channels for ADC 2 (Mult. {len(adc2_df)})")
-        channel_list = [int(r['ch']) for i,r in adc2_df.iterrows()]
-        print('|_', channel_list)
-    else:
-        print("- Found no channels with entries for ADC2 (Mult. 0)")
-        print('|_ []')
+        if len(adc2_df)>0:
+            print(f"- Found following channels for ADC 2 (Mult. {len(adc2_df)})")
+            channel_list = np.sort([int(r['ch']) for i,r in adc2_df.iterrows()])
+            print('|_', channel_list)
+        else:
+            print("- Found no channels with entries for ADC2 (Mult. 0)")
+            print('|_ []')
 
     # Take the timing 
     t0_adc1 = adc1_df.query(f"ch==0")['tai_ns'].values
@@ -55,11 +62,13 @@ def GetEventMetadata(df,lpath,event_n,datime,offset_us,window_us=1500):
     # Check how many busy signals we have found in the timing window
     # If we don't have enough it's time to give up and close the function
     if (len(t0_adc1)>1 or len(t0_adc2)>1):
-        print("ATTENTION: Multiple t0 found in same window. Will choose the earliest.")
+        if(verbose):
+            print("ATTENTION: Multiple t0 found in same window. Will choose the earliest.")
         eventmeta.successfullyMerged = 2
         return eventmeta
     elif (len(t0_adc1)==0 and len(t0_adc2)==0):
-        print("ERROR: No t0 found in timing window. Maybe try with a larger one.")
+        if(verbose):
+            print("ERROR: No t0 found in timing window. Maybe try with a larger one.")
         eventmeta.successfullyMerged = 0
         return eventmeta
     else:
@@ -72,14 +81,16 @@ def GetEventMetadata(df,lpath,event_n,datime,offset_us,window_us=1500):
         eventmeta.offset_us[1] = t0_adc1[0]/1000.
         eventmeta.triggered_ADCs.append(1)
     else:
-        print("No t0 for ADC1 found. Will assign to it t0 from ADC2.")
+        if(verbose):
+            print("No t0 for ADC1 found. Will assign to it t0 from ADC2.")
         eventmeta.offset_us[1] = t0_adc2[0]/1000.
     # Assign ADC2 value 
     if (len(t0_adc2)>0):
         eventmeta.offset_us[2] = t0_adc2[0]/1000.
         eventmeta.triggered_ADCs.append(2)
     else:
-        print("No t0 for ADC2 found. Will assign to it t0 from ADC1.")
+        if(verbose):
+            print("No t0 for ADC2 found. Will assign to it t0 from ADC1.")
         eventmeta.offset_us[2] = t0_adc1[0]/1000.
     # Calculate how off the actual tai are
     eventmeta.jitter_ns[1] = eventmeta.offset_us[1] - eventmeta.dec_offset_us
@@ -87,9 +98,10 @@ def GetEventMetadata(df,lpath,event_n,datime,offset_us,window_us=1500):
     # Update nTriggered_ADCs
     eventmeta.nTriggered_ADCs = len(eventmeta.triggered_ADCs)
 
-    print(f'\nOffset: {eventmeta.dec_offset_us} us')
-    print(f't0_ADCs: [{eventmeta.offset_us[1]} | {eventmeta.offset_us[2]}] us')
-    print(f'Jitter w.: [{eventmeta.jitter_ns[1]} | {eventmeta.jitter_ns[2]}] ns\n')
+    if(verbose):
+        print(f'\nOffset: {eventmeta.dec_offset_us} us')
+        print(f't0_ADCs: [{eventmeta.offset_us[1]} | {eventmeta.offset_us[2]}] us')
+        print(f'Jitter w.: [{eventmeta.jitter_ns[1]} | {eventmeta.jitter_ns[2]}] ns\n')
 
     # Let's now find the front of the busy signal
     for trigadc in eventmeta.triggered_ADCs:
@@ -107,7 +119,8 @@ def GetEventMetadata(df,lpath,event_n,datime,offset_us,window_us=1500):
         for i,h in enumerate(eventmeta.hist_h[trigadc][0]):
             if h<-1000:
                 eventmeta.busyFront_ns[trigadc] = i*10
-                print(f'Found busy front on ADC {trigadc} ({adc_sn}), at {eventmeta.busyFront_ns[trigadc]} ns.')
+                if(verbose):
+                    print(f'Found busy front on ADC {trigadc} ({adc_sn}), at {eventmeta.busyFront_ns[trigadc]} ns.')
                 break 
         # Let's get a timing relative to the busy
         trel = query_df.query(f'ch==0 & sn=={adc_sn}')['tai_ns'].values[0]
@@ -121,7 +134,13 @@ def GetEventMetadata(df,lpath,event_n,datime,offset_us,window_us=1500):
         # And let's do the same for all the other channels
         for ch in eventmeta.SUM_CHANNELS:
             # Get the entry number of the root tree corresponding to the channel/adc pair we're looking for
+            # Try to find the channel
+            query_df_channel = query_df.query(f'ch=={ch} & sn=={adc_sn}')
+            if len(query_df_channel)==0:
+                continue
+
             entry_number = query_df.query(f'ch=={ch} & sn=={adc_sn}').iloc[0].name
+            # print(ch,entry_number)
             # Let's grab the corresponding waveform histogram, by switching to the proper entry
             eventmeta.entryPerChannel[trigadc][ch] = entry_number
             rwf.GetEntry(eventmeta.entryPerChannel[trigadc][ch])
@@ -135,10 +154,9 @@ def GetEventMetadata(df,lpath,event_n,datime,offset_us,window_us=1500):
             # Light ADC clock at 100 MHz, bin corresponding to 10 ns, so mult. by 10 to get ns
             eventmeta.hist_b[trigadc][ch] = [wf_hist.GetBinLowEdge(i) for i in range(1,wf_hist.GetNbinsX()+1)]
             eventmeta.hist_h[trigadc][ch] = [wf_hist.GetBinContent(i) for i in range(1,wf_hist.GetNbinsX()+1)]
-            nbins = len(eventmeta.hist_b[trigadc][ch])
-            eventmeta.hist_b[trigadc][ch] = np.linspace(trel,trel+(nbins*10),nbins)
-
-
+            # eventmeta.hist_h[trigadc][ch] = NoiseCleaner(eventmeta.hist_h[trigadc][ch])
+            # nbins = len(eventmeta.hist_b[trigadc][ch])
+            # eventmeta.hist_b[trigadc][ch] = np.linspace(trel,trel+(nbins*10),nbins)
     return eventmeta
 
 
@@ -164,3 +182,27 @@ def FindPartnerLightFile(cfile,ldirectory):
     df = (uproot.open(lpath)['rwf']).arrays(['event','sn','ch','utime_ms','tai_ns'],library='pd')
     return df, lpath
 
+
+
+def NoiseCleaner(waveform):
+    
+    # Location of noise peaks in FFT, only for FIRST HALF, and only for 1024-sampling
+    noisePeaks = [ 
+        [90,115],
+        [200,210],
+        [304,312],
+        [405,415],
+        [510,515]
+    ]
+    # Make fast fourier transform
+    fft = np.fft.fft(waveform)
+    fft_corr = np.copy(fft)
+    # Set noise peaks to 0
+    for peak in noisePeaks:
+        for i in range(peak[0],peak[1]):
+            fft_corr[i] = 0
+        for i in range(len(fft)-peak[1],len(fft)-peak[0]):
+            fft_corr[i] = 0 
+    # Make inverse of fast fourier transform
+    h = np.fft.ifft(fft_corr)
+    return np.real(h)
